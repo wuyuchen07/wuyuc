@@ -13,8 +13,7 @@ public final class SqlUtils {                 // ①
     /* 内部工具 */   bind / checkSql / requireUser
 }
 ```
-
-对外 API 一览（这就是你以后会用的全部东西）：
+API：
 
 | 你想干的事                  | 调用                                                         |
 | --------------------------- | ------------------------------------------------------------ |
@@ -51,7 +50,7 @@ selectById(1)                                   ← 你调用
 
 ## 三、逐块讲
 
-### ① `final` + 私有构造（[L24-L37](src/util/SqlUtils.java#L24-L37)）
+### ① `final` + 私有构造
 
 ```java
 public final class SqlUtils {          // final：不允许被继承
@@ -61,23 +60,23 @@ public final class SqlUtils {          // final：不允许被继承
 ```
 - Java **没有"静态类"**（你之前那个 `public static class` 报错就是这原因），规范上用 `final` + 私有构造来表达同一个意思：**这个类只提供静态方法，不需要也不能有实例**。
 - 构造里抛 `AssertionError` 是双保险：反射也能挡住（`setAccessible(true)` 调构造照样炸）。
-- 代价：正因为纯静态，它**没法被 mock、没法替换实现**，测试时不好隔离 —— 后面第 4 节说。
+- 代价：正因为纯静态，它**没法被 mock、没法替换实现**，测试时不好隔离
 
-### ② `USER_COLUMNS`（[L27-L28](src/util/SqlUtils.java#L27-L28)）
+### ② `USER_COLUMNS`
 
 ```java
 private static final String USER_COLUMNS = "id, username, password, email, phone, age, status, create_time, update_time";
 ```
 列名写一遍，5 个查询方法共用。以后表加字段，**只改这一行**。这比每个方法里写 `select *` 好：`*` 拿回来的列顺序/数量会随表结构变，映射代码容易悄悄崩。
 
-### ③ `SORTABLE_COLUMNS` 白名单（[L31-L32](src/util/SqlUtils.java#L31-L32)）
+### ③ `SORTABLE_COLUMNS`
 
 ```java
 private static final Set<String> SORTABLE_COLUMNS = Set.of("id", "username", "age", "status", "create_time");
 ```
 `Set.of(...)` 造的是**不可变集合**，没人能往里加东西。它的作用在 [`selectSorted`](src/util/SqlUtils.java#L209-L219)：排序字段必须拼进 SQL（`?` 拼不进去），那就只允许这几个词 —— 传 `"password; drop table user"` 会被直接拦掉（实测已验证）。
 
-### ④ `executeUpdate`：写操作（[L49-L59](src/util/SqlUtils.java#L49-L59)）
+### ④ `executeUpdate`
 
 ```java
 public static boolean executeUpdate(String sql, Object... params) {
@@ -97,7 +96,7 @@ public static boolean executeUpdate(String sql, Object... params) {
 - **`> 0`** 表示至少影响一行。注意一个坑：`update` 时**影响 0 行不等于失败** —— 可能只是"新值和旧值一模一样"。严格判断要连 `update` 的返回值一起看。
 - **异常被 `catch` 掉并返回 false**（见第 4 节，这是这个类的最大取舍）。
 
-### ⑤ `executeQuery`：读操作 + 泛型 + 回调（[L73-L91](src/util/SqlUtils.java#L73-L91)）
+### ⑤ `executeQuery`
 
 ```java
 public static <T> List<T> executeQuery(String sql, RowMapper<T> mapper, Object... params) {
@@ -121,7 +120,7 @@ public static <T> List<T> executeQuery(String sql, RowMapper<T> mapper, Object..
 
 顺带：`select` 查不到数据时返回**空集合**（`isEmpty()` 为 true），而不是 `null` —— 调用方不用到处判空，`for` 循环也直接安全。这是"返回空集合优于返回 null"的规范实践。
 
-### ⑥ `RowMapper`：函数式接口（[L94-L97](src/util/SqlUtils.java#L94-L97)）
+### ⑥ `RowMapper`
 
 ```java
 @FunctionalInterface
@@ -133,14 +132,14 @@ public interface RowMapper<T> {
 - `SqlUtils::mapUser` 就是方法引用，完全等价于 `rs -> SqlUtils.mapUser(rs)`；[`countByAgeGreaterThan`](src/util/SqlUtils.java#L221-L227) 里则干脆用 lambda `rs -> rs.getInt(1)`，因为它只需要一列数字。
 - 它也声明了 `throws SQLException`，所以映射代码里可以直接用 `rs.getString(...)`，不必自己包 try。
 
-### ⑦ `mapUser`（[L102-L114](src/util/SqlUtils.java#L102-L114)）
+### ⑦ `mapUser`
 
 ```java
 u.setUsername(rs.getString("username"));   // 用列名，不用序号
 ```
 用**列名**取值，抗 SQL 列顺序变化，可读性也好。唯一用序号的是 `rs.getInt(1)`（`count(*)` 只返回一列，用序号反而清楚）。
 
-### ⑧ 增删改三个方法（[L125-L163](src/util/SqlUtils.java#L125-L163)）
+### ⑧ 增删改三个方法
 
 ```java
 public static boolean deleteById(long id) {
@@ -152,7 +151,7 @@ public static boolean deleteById(long id) {
 - `deleteById` 拒绝 `id <= 0`，是为了防止"条件写歪导致 `delete from user` 删全表"这类事故。
 - `updateById` 要求 `id > 0`，否则一句 `where id = ?` 绑个 0 进去什么也改不到，静默失败最难查。
 
-### ⑨ 常量与内部小工具（[L231-L247](src/util/SqlUtils.java#L231-L247)）
+### ⑨ 常量与内部小工具
 
 ```java
 private static void bind(PreparedStatement ps, Object[] params) throws SQLException {
@@ -161,7 +160,7 @@ private static void bind(PreparedStatement ps, Object[] params) throws SQLExcept
     }
 }
 ```
-- **JDBC 参数下标是 1 起**，而数组是 0 起，所以是 `i + 1` —— 这是新手最常错的地方之一。
+- **JDBC 参数下标是 1 起**
 - 用 `setObject` 而不是 `setString/setInt`：让驱动按 Java 类型自己选，少写一堆分支。代价是性能略低、类型错误会推迟到运行期才暴露；练习阶段完全够用。
 - `checkSql` / `requireUser` 就是"前置校验提取成私有方法"，让主流程读起来干净。
 
@@ -177,11 +176,3 @@ private static void bind(PreparedStatement ps, Object[] params) throws SQLExcept
 | user 表方法写在 `SqlUtils` 里                    | 练习方便                              | 业务 SQL 混进通用工具类，违反分层。规范做法：`SqlUtils` 只留 `executeUpdate` / `executeQuery` 两个通用方法，`selectById` 这些挪到 `dao/impl/UserDaoImpl` |
 
 另外一个细节：传 `null` 值进去时，`setObject(i, null)` 在 MySQL 驱动上能正常发 NULL，但 JDBC 规范允许某些驱动报错；严格写法是 `ps.setNull(i, Types.VARCHAR)`。目前这套代码没用到 null 参数，先知道有这回事就行。
-
----
-
-## 五、一句话总结
-
-> `SqlUtils` = **两个通用引擎**（`executeUpdate` 管写、`executeQuery` 管读，各自负责连接、绑定、关闭、异常）+ **一层薄薄的便利方法**（把写死的 SQL 和参数顺序集中起来）+ **几道安全栏杆**（`?` 只绑值、列名走白名单、id 校验）。
-
-要我再往下走一步，就把 `SqlUtils` 瘦身成只留两个通用方法、把 user 的业务查询搬进 `dao/UserDao` + `dao/impl/UserDaoImpl`，这样[test.md](test.md#L64-L80) 里的分层就真正落地了 —— 说一声我就动手。   
